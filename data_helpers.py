@@ -122,11 +122,17 @@ def load_data_and_labels():
     # Split by words
     x_text = positive_examples + negative_examples
     x_text = [clean_str(sent) for sent in x_text]
-    # Generate labels
-    positive_labels = [[0, 1] for _ in positive_examples]
-    negative_labels = [[1, 0] for _ in negative_examples]
+    # pos/neg label is 0 or 1
+    pos_label = np.zeros(len(positive_examples))
+    neg_label = np.ones(len(negative_examples))
+    labels = np.concatenate((pos_label, neg_label))
+    # Generate labels is [0,1] or [1,0]
+    positive_labels = [[0,1] for _ in positive_examples]
+    negative_labels = [[1,0] for _ in negative_examples] 
     y = np.concatenate([positive_labels, negative_labels], 0)
-    return [x_text, y]
+    build_word2vec_vocabulary('data/',x_text, labels,'data/word2vec.cpkl')
+    
+    return x_text, y
 
 def word2vecIdx(x_text, embedding_size):
     #x_text : [batchsize, sentence]
@@ -159,9 +165,16 @@ def batch_iter(data, batch_size, num_epochs, shuffle=True):
             yield shuffled_data[start_index:end_index]
 
 def build_word2vec_vocabulary(w2v_file, text, label, dumpFilePath):
-    # w2v_file: the binary file of pretrained w2v_file
-    # text: list of setences
-    # label: a list, label of every sentence in text
+    """
+    Argument:
+        w2v_file: the binary file of pretrained w2v_file
+        text: list of setences
+        label: a list, label of every sentence in text
+    Return:
+        None
+        this will dump a cPickle file which contain:
+        sentences_info, vocab_w2v, random_w2v, word_idx_map, vocab
+    """
     sentences_info, vocab = build_data_cv(text, label, cv=10, clean_string=True)
     maxSentenceLength = np.max(pd.DataFrame(sentences_info)["words_num"])
     print "number of sentences: " + str(len(sentences_info))

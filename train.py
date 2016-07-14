@@ -41,6 +41,7 @@ print("")
 
 # Load data
 print("Loading data...")
+# y is a list like [0,1,0,0,1,....] for two labels classification problem
 x_text, y = data_helpers.load_data_and_labels()
 
 # Build vocabulary
