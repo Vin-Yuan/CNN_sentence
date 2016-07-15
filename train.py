@@ -18,7 +18,7 @@ tf.flags.DEFINE_string("filter_sizes", "3,4,5", "Comma-separated filter sizes (d
 tf.flags.DEFINE_integer("num_filters", 128, "Number of filters per filter size (default: 128)")
 tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
 tf.flags.DEFINE_float("l2_reg_lambda", 0.0, "L2 regularizaion lambda (default: 0.0)")
-
+tf.flags.DEFINE_integer("class_num", 2, "the num of classes")
 # Training parameters
 tf.flags.DEFINE_integer("batch_size", 64, "Batch Size (default: 64)")
 tf.flags.DEFINE_integer("num_epochs", 200, "Number of training epochs (default: 200)")
@@ -42,11 +42,16 @@ print("")
 # Load data
 print("Loading data...")
 # y is a list like [0,1,0,0,1,....] for two labels classification problem
-x_text, y = data_helpers.load_data_and_labels()
-
-# Build vocabulary
+x_text, label = data_helpers.load_data_and_labels()
 max_document_length = max([len(x.split(" ")) for x in x_text])
-x, vocab_size = data_helpers.word2vecIdx(x_text, max_document_length)
+
+# Build VocabEmbeding for different embedding model
+VocabEmbed = []
+x = []
+VocabEmbedding, word2vec_map = data_helpers.getEmbedding(x_text, max_document_length,static=True, name='GoogleNews')
+VocabEmbed.append(VocabEmbedding)
+x = x.append(word2vec_map)
+y = data_helpers.getY(y, FLAGS.class_num)
 
 #ipdb.set_trace()
 #vocab_processor = learn.preprocessing.VocabularyProcessor(max_document_length)
@@ -77,14 +82,15 @@ with tf.Graph().as_default():
     with sess.as_default():
         cnn = TextCNN(
             sequence_length=x_train.shape[1],
-            num_classes=2,
+            num_classes=FLAGS.class_num,
             #vocab_size=len(vocab_processor.vocabulary_),
             vocab_size=vocab_size,
-            embedding_size=FLAGS.embedding_dim,
             filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
             num_filters=FLAGS.num_filters,
             l2_reg_lambda=FLAGS.l2_reg_lambda,
-            word2vec_file='mr.p')
+            VocabEmbeddings=VocabEmbedings,
+            channel_num=len(VocabEmbedings),
+            )
 
         # Define Training procedure
         global_step = tf.Variable(0, name="global_step", trainable=False)
