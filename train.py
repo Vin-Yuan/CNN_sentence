@@ -57,7 +57,7 @@ word2vec_map = np.expand_dims(word2vec_map, axis=-1)
 
 # input_x
 x = word2vec_map
-ipdb.set_trace()
+#ipdb.set_trace()
 #y = data_helpers.get_Y(label, FLAGS.class_num)
 y = label
 #vocab_processor = learn.preprocessing.VocabularyProcessor(max_document_length)
