@@ -5,6 +5,7 @@ from collections import Counter
 import cPickle
 from collections import defaultdict
 import pandas as pd
+import ipdb
 def build_data_cv(text,label, cv=10, clean_string=True):
     """ Loads data and split into 10 folds.
     Argument:
@@ -131,7 +132,7 @@ def load_data_and_labels():
     positive_labels = [[0,1] for _ in positive_examples]
     negative_labels = [[1,0] for _ in negative_examples] 
     y = np.concatenate([positive_labels, negative_labels], 0)
-    build_word2vec_vocabulary('data/',x_text, labels,'data/word2vec.cpkl')
+    #build_word2vec_vocabulary('data/GoogleNews-vectors-negative300.bin',x_text, labels,'data/word2vec.cpkl')
     
     return x_text, y
 
@@ -147,12 +148,15 @@ def getEmbedding(x_text, sequence_length, static=True, name=None):
     """
     x = cPickle.load(open("mr.p","rb"))
     revs, W, W2, word2vec_map, vocab = x[0], x[1], x[2], x[3], x[4]
-    VocabEmbedding = np.zeros((len(x_text), sequence_length))
+    # W : [vocab_size , embeding_size], a lookup table
+    # word2vec_map : [vocab_size-1 , sequence_length], a index map for every word in vocabulary
+    textW2V_map= np.zeros((len(x_text), sequence_length))
     for idx, sentence in enumerate(x_text):
         words = sentence.split(' ')
         for j, word in enumerate(words):
-            VocabEmbedding [idx][j] = word2vec_map[word]
-    return VocabEmbedding, word2vec_map
+            textW2V_map[idx][j] = word2vec_map[word]
+    VocabEmbedding = {'name':name, 'embedding':W, 'static':static}
+    return VocabEmbedding, textW2V_map 
 def get_Y(label, class_num):
     """
      Argument:
@@ -163,6 +167,7 @@ def get_Y(label, class_num):
     y = np.zeros((len(label), class_num))
     for idx, class_map in label:
         y[idx][class_map] = 1;
+    return y
 def batch_iter(data, batch_size, num_epochs, shuffle=True):
     """
     Generates a batch iterator for a dataset.
@@ -203,7 +208,7 @@ def build_word2vec_vocabulary(w2v_file, text, label, dumpFilePath):
     print "word2vec loaded!"
     print "num words already in word2vec: " + str(len(w2v))
     add_unknown_words(w2v, vocab)
-    vocab_w2c, word_idx_map = get_W(w2v)
+    vocab_w2v, word_idx_map = get_W(w2v)
     rand_vecs = {}
     add_unknown_words(rand_vecs, vocab)
     random_w2c, _ = get_W(rand_vecs) 
