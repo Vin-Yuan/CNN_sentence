@@ -46,30 +46,35 @@ x_text, label = data_helpers.load_data_and_labels()
 max_document_length = max([len(x.split(" ")) for x in x_text])
 
 # Build VocabEmbeding for different embedding model
-VocabEmbed = []
-x = []
-VocabEmbedding, word2vec_map = data_helpers.getEmbedding(x_text, max_document_length,static=True, name='GoogleNews')
-VocabEmbed.append(VocabEmbedding)
-x = x.append(word2vec_map)
-y = data_helpers.getY(y, FLAGS.class_num)
+# VocabEmbed : [embedding_model_idx, embeding_info]
+VocabEmbedModels = []
 
+# word2vec_map : [batchsize, sequence_length], 2 dimension
+VocabEmbedding, word2vec_map = data_helpers.getEmbedding(x_text, max_document_length,static=True, name='GoogleNews')
+VocabEmbedModels.append(VocabEmbedding)
+# expand dims -> [batchsize, sequence_length,channel]
+word2vec_map = np.expand_dims(word2vec_map, axis=-1)
+
+# input_x
+x = word2vec_map
 #ipdb.set_trace()
+#y = data_helpers.get_Y(label, FLAGS.class_num)
+y = label
 #vocab_processor = learn.preprocessing.VocabularyProcessor(max_document_length)
 #x = np.array(list(vocab_processor.fit_transform(x_text)))
 
 # Randomly shuffle data
 np.random.seed(10)
 shuffle_indices = np.random.permutation(np.arange(len(y)))
-x_shuffled = x[shuffle_indices]
+x_shuffled = x[shuffle_indices,:,:]
 y_shuffled = y[shuffle_indices]
 
 # Split train/test set
 # TODO: This is very crude, should use cross-validation
-x_train, x_dev = x_shuffled[:-1000], x_shuffled[-1000:]
+x_train, x_dev = x_shuffled[:-1000,:,:], x_shuffled[-1000:,:,:]
 y_train, y_dev = y_shuffled[:-1000], y_shuffled[-1000:]
-print("Vocabulary Size: {:d}".format(vocab_size))
+#print("Vocabulary Size: {:d}".format(vocab_size))
 print("Train/Dev split: {:d}/{:d}".format(len(y_train), len(y_dev)))
-
 
 # Training
 # ==================================================
@@ -83,13 +88,11 @@ with tf.Graph().as_default():
         cnn = TextCNN(
             sequence_length=x_train.shape[1],
             num_classes=FLAGS.class_num,
-            #vocab_size=len(vocab_processor.vocabulary_),
-            vocab_size=vocab_size,
             filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
             num_filters=FLAGS.num_filters,
             l2_reg_lambda=FLAGS.l2_reg_lambda,
-            VocabEmbeddings=VocabEmbedings,
-            channel_num=len(VocabEmbedings),
+            VocabEmbeddings=VocabEmbedModels,
+            channel_num=len(VocabEmbedModels),
             )
 
         # Define Training procedure

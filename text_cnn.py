@@ -1,7 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import cPickle
-
+import ipdb
 
 class TextCNN(object):
     """
@@ -9,7 +9,7 @@ class TextCNN(object):
     Uses an embedding layer, followed by a convolutional, max-pooling and softmax layer.
     """
     def __init__(
-      self, sequence_length, num_classes, vocab_size,
+      self, sequence_length, num_classes,
       filter_sizes, num_filters, VocabEmbeddings, channel_num, l2_reg_lambda=0.0):
         """
             sequence_length: the length of every sentence
@@ -26,7 +26,7 @@ class TextCNN(object):
         l2_loss = tf.constant(0.0)
 
         # Embedding layer
-        Embeddings = {}
+        Embeddings = [] 
         with tf.device('/cpu:0'), tf.name_scope("embedding"):
             for idx, vocab in enumerate(VocabEmbeddings):
                 if vocab['static']:
@@ -34,7 +34,7 @@ class TextCNN(object):
                 else:
                     W = tf.Variable(vocab['embedding'], name=vocab['name'])
                 embedded_chars = tf.nn.embedding_lookup(W, self.input_x[:,:,idx])
-                Embeddings[idx] = tf.expand_dims(self.embedded_chars, -1)
+                Embeddings.append(tf.expand_dims(embedded_chars, -1))
 
         # Create a convolution + maxpool layer for each filter size
         pooled_outputs = []
@@ -44,7 +44,8 @@ class TextCNN(object):
                 # calculate convolution on each channel
                 for idx, embedding in enumerate(Embeddings):
                     # Convolution Layer
-                    embedding_size = embedding.get_shape().as_list()[-1]
+                    embedding_size = embedding.get_shape().as_list()[-2]
+                    print "embedding_size: {}".format(embedding_size)
                     filter_shape = [filter_size, embedding_size, 1, num_filters]
                     W = tf.Variable(tf.truncated_normal(filter_shape, stddev=0.1), name="W")
                     b = tf.Variable(tf.constant(0.1, shape=[num_filters]), name="b")
@@ -56,7 +57,7 @@ class TextCNN(object):
                         name="conv")
                     # Apply nonlinearity
                     h = tf.nn.relu(tf.nn.bias_add(conv, b), name="relu")
-                    multi_conv.append(h)
+                    channel_conv.append(h)
                 # add all channels convolution result
                 h = tf.add_n(channel_conv)
                 # Maxpooling over the outputs
