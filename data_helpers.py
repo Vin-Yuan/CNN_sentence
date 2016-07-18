@@ -5,6 +5,7 @@ from collections import Counter
 import cPickle
 from collections import defaultdict
 import pandas as pd
+from tensorflow.contrib import learn
 import ipdb
 def build_data_cv(text,label, cv=10, clean_string=True):
     """ Loads data and split into 10 folds.
@@ -115,6 +116,8 @@ def load_data_and_labels():
     """
     Loads MR polarity data from files, splits the data into words and generates labels.
     Returns split sentences and labels.
+    x_text: a list by list which split by sentences and split by words 
+    y: a list by list for class num and sentences num
     """
     # Load data from files
     positive_examples = list(open("./data/rt-polaritydata/rt-polarity.pos", "r").readlines())
@@ -124,6 +127,7 @@ def load_data_and_labels():
     # Split by words
     x_text = positive_examples + negative_examples
     x_text = [clean_str(sent) for sent in x_text]
+    # x_text = [x.split(' ') for x in x_text]
     # pos/neg label is 0 or 1
     pos_label = np.zeros(len(positive_examples))
     neg_label = np.ones(len(negative_examples))
@@ -132,8 +136,6 @@ def load_data_and_labels():
     positive_labels = [[0,1] for _ in positive_examples]
     negative_labels = [[1,0] for _ in negative_examples] 
     y = np.concatenate([positive_labels, negative_labels], 0)
-    #build_word2vec_vocabulary('data/GoogleNews-vectors-negative300.bin',x_text, labels,'data/word2vec.cpkl')
-    
     return x_text, y
 
 def getEmbedding(x_text, sequence_length, static=True, name=None):
@@ -142,8 +144,10 @@ def getEmbedding(x_text, sequence_length, static=True, name=None):
         x_text : [batchsize, sentence]
         sequence_length: the max length over all sentences, used for word2vec_map 
     Return:
-        VocabEmbedding: [vocabulary_size, embedding_size], the vocabulary embedding as lookup tabel, a dict like 
-            {name:str, embedding:np.narray, static:True(or False)}
+        VocabEmbedding:
+            the vocabulary embedding as lookup tabel, a dict like 
+                {name:str, embedding:np.narray, static:True(or False)}
+                embedding : [vocabulary_size, embedding_size], 
         word2vec_map: [batchsize, sequence_length] ,the index which map word to vector
     """
     x = cPickle.load(open("mr.p","rb"))
@@ -157,6 +161,13 @@ def getEmbedding(x_text, sequence_length, static=True, name=None):
             textW2V_map[idx][j] = word2vec_map[word]
     VocabEmbedding = {'name':name, 'embedding':W, 'static':static}
     return VocabEmbedding, textW2V_map 
+def getRandEmbedding(x_text, embedding_size, sequence_length, static=True, name='random_embedding'):
+    vocab_processor = learn.preprocessing.VocabularyProcessor(sequence_length)
+    x = np.array(list(vocab_processor.fit_transform(x_text)),dtype=np.float32)
+    vocab_size = len(vocab_processor.vocabulary_)
+    embedding = np.random.uniform(-1.0, 1.0, (vocab_size, embedding_size)).astype(np.float32)
+    VocabEmbedding = {'name':name, 'embedding':embedding, 'static':static}
+    return VocabEmbedding, x
 def get_Y(label, class_num):
     """
      Argument:

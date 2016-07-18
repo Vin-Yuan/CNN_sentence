@@ -30,8 +30,10 @@ class TextCNN(object):
         with tf.device('/cpu:0'), tf.name_scope("embedding"):
             for idx, vocab in enumerate(VocabEmbeddings):
                 if vocab['static']:
+                    print 'name:{0}, static , embedding_size: {1}'.format(vocab['name'],vocab['embedding'].shape[-1])
                     W = tf.constant(vocab['embedding'], name=vocab['name'])
                 else:
+                    print 'name:{0}, non-static , embedding_size: {1}'.format(vocab['name'],vocab['embedding'].shape[-1])
                     W = tf.Variable(vocab['embedding'], name=vocab['name'])
                 embedded_chars = tf.nn.embedding_lookup(W, self.input_x[:,:,idx])
                 Embeddings.append(tf.expand_dims(embedded_chars, -1))
@@ -45,7 +47,6 @@ class TextCNN(object):
                 for idx, embedding in enumerate(Embeddings):
                     # Convolution Layer
                     embedding_size = embedding.get_shape().as_list()[-2]
-                    print "embedding_size: {}".format(embedding_size)
                     filter_shape = [filter_size, embedding_size, 1, num_filters]
                     W = tf.Variable(tf.truncated_normal(filter_shape, stddev=0.1), name="W")
                     b = tf.Variable(tf.constant(0.1, shape=[num_filters]), name="b")
