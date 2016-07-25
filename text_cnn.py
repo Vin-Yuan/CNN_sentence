@@ -39,29 +39,22 @@ class TextCNN(object):
                 Embeddings.append(tf.expand_dims(embedded_chars, -1))
 
         # Create a convolution + maxpool layer for each filter size
+        # below take the all the W as same size, so just concat them
+        embedding = tf.concat(concat_dim=3, values=Embeddings, name="concat_embeddings")
         pooled_outputs = []
         for i, filter_size in enumerate(filter_sizes):
             with tf.name_scope("conv-maxpool-%s" % filter_size):
-                channel_conv = []
-                # calculate convolution on each channel
-                for idx, embedding in enumerate(Embeddings):
-                    # Convolution Layer
-                    embedding_size = embedding.get_shape().as_list()[-2]
-                    filter_shape = [filter_size, embedding_size, 1, num_filters]
-                    W = tf.Variable(tf.truncated_normal(filter_shape, stddev=0.1), name="W")
-                    b = tf.Variable(tf.constant(0.1, shape=[num_filters]), name="b")
-                    conv = tf.nn.conv2d(
-                        embedding,
-                        W,
-                        strides=[1, 1, 1, 1],
-                        padding="VALID",
-                        name="conv")
-                    # Apply nonlinearity
-                    h = tf.nn.relu(tf.nn.bias_add(conv, b), name="relu")
-                    channel_conv.append(h)
-                # add all channels convolution result
-                h = tf.add_n(channel_conv)
-                # Maxpooling over the outputs
+                embedding_size = embedding.get_shape().as_list()[-2]
+                filter_shape = [filter_size, embedding_size, channel_num, num_filters]
+                W = tf.Variable(tf.truncated_normal(filter_shape, stddev=0.1), name="W")
+                b = tf.Variable(tf.constant(0.1, shape=[num_filters]), name="b")
+                conv = tf.nn.conv2d(
+                    embedding,
+                    W,
+                    strides=[1, 1, 1, 1],
+                    padding="VALID",
+                    name="conv")
+                h = tf.nn.relu(tf.nn.bias_add(conv, b), name="relu")
                 pooled = tf.nn.max_pool(
                     h,
                     ksize=[1, sequence_length - filter_size + 1, 1, 1],
@@ -88,6 +81,8 @@ class TextCNN(object):
             b = tf.Variable(tf.constant(0.1, shape=[num_classes]), name="b")
             l2_loss += tf.nn.l2_loss(W)
             l2_loss += tf.nn.l2_loss(b)
+            # add l2_norm based on original paper
+            W = tf.nn.l2_normalize(W,dim=0) * 3.0
             self.scores = tf.nn.xw_plus_b(self.h_drop, W, b, name="scores")
             self.predictions = tf.argmax(self.scores, 1, name="predictions")
 

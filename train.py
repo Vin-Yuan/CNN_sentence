@@ -46,34 +46,20 @@ print("Loading data...")
 x_text, y = data_helpers.load_data_and_labels()
 max_document_length = max([len(x.split(' ')) for x in x_text])
 
+#--------------------------------------changed for static or non-static---------------------------------------------
 # Build VocabEmbeding for different embedding model
-# VocabEmbed : [embedding_model_idx, embeding_info]
 VocabEmbedModels = []
-
-# word2vec_map : [batchsize, sequence_length], 2 dimension
-VocabEmbedding, word2vec_map = data_helpers.getEmbedding(x_text, max_document_length,static=False, name='GoogleNews')
+VocabEmbedding, word2vec_map = data_helpers.getEmbedding(x_text, max_document_length,static=True, name='GoogleNews')
 VocabEmbedModels.append(VocabEmbedding)
-# expand dims -> [batchsize, sequence_length,channel]
 word2vec_map = np.expand_dims(word2vec_map, axis=-1)
-# input_x
 x = word2vec_map
-# two channel static and non-static
-'''
+# two channels (static and non-static) which are the same scale (300 word2vec)
+
 x = np.concatenate((x,x), axis=-1)
 VocabEmbedding2 = VocabEmbedding.copy()
-VocabEmbedding2['static'] = False
+VocabEmbedding2['static'] = True
 VocabEmbedModels.append(VocabEmbedding2)
-'''
-# below will get a [vocab_size, max_sequence_length] np.array
-VocabRandEmbedding, rand_word2vec_map = data_helpers.getRandEmbedding(x_text, embedding_size=100, 
-    sequence_length=max_document_length,static=True, name='random_embedding')
-
-VocabEmbedModels.append(VocabRandEmbedding)
-rand_word2vec_map = np.expand_dims(rand_word2vec_map, axis=-1)
-
-x = np.concatenate((x, rand_word2vec_map), axis=-1)
-
-
+#-------------------------------------------------------------------------------------------------------------------
 
 # Randomly shuffle data
 np.random.seed(10)
