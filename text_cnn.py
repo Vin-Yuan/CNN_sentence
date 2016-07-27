@@ -3,6 +3,12 @@ import numpy as np
 import cPickle
 import ipdb
 
+
+tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
+tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
+tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
+FLAGS = tf.flags.FLAGS
+FLAGS._parse_flags()
 class TextCNN(object):
     """
     A CNN for text classification.
@@ -96,23 +102,13 @@ class TextCNN(object):
             correct_predictions = tf.equal(self.predictions, tf.argmax(self.input_y, 1))
             self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
 
-    def Trainer(W_list, x_list, y_list):
+    def Trainer(self, data_processor):
         with tf.Graph().as_default():
             session_conf = tf.ConfigProto(
               allow_soft_placement=True,
               log_device_placement=False)
             sess = tf.Session(config=session_conf)
             with sess.as_default():
-                self = TextCNN(
-                    sequence_length=x_train.shape[1],
-                    num_classes=FLAGS.class_num,
-                    filter_sizes=list(map(int, FLAGS.filter_sizes.split(","))),
-                    num_filters=FLAGS.num_filters,
-                    l2_reg_lambda=FLAGS.l2_reg_lambda,
-                    VocabEmbeddings=VocabEmbedModels,
-                    channel_num=len(VocabEmbedModels),
-                    )
-
                 # Define Training procedure
                 global_step = tf.Variable(0, name="global_step", trainable=False)
                 optimizer = tf.train.AdamOptimizer(1e-3)
@@ -161,8 +157,8 @@ class TextCNN(object):
 
                 # Initialize all variables
                 sess.run(tf.initialize_all_variables())
-                
-    def train_step(x_batch, y_batch):
+                batch_train(sess, data_processor, batch_size=64, num_epochs=100)
+    def train_step(self, x_batch, y_batch, sess):
         """
         A single training step
         """
@@ -177,7 +173,7 @@ class TextCNN(object):
         time_str = datetime.datetime.now().isoformat()
         print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
         train_summary_writer.add_summary(summaries, step)
-    def dev_step(x_batch, y_batch, writer=None):
+    def dev_step(self, x_batch, y_batch, sess, writer=None):
         """
         Evaluates model on a dev set
         """
@@ -194,18 +190,19 @@ class TextCNN(object):
         if writer:
             writer.add_summary(summaries, step)
 
-    def batch_train():
+    def batch_train(self, sess, data_processor, batch_size=64, num_epochs=100):
         # Generate batches
-        batches = data_helpers.batch_iter(
-            list(zip(x_train, y_train)), FLAGS.batch_size, FLAGS.num_epochs)
+        batches = data_processor.batch_iter(batch_size, num_epochs)
+        x_dev = data_processor.dev_x
+        y_dev = data_processor.dev_y
         # Training loop. For each batch...
         for batch in batches:
             x_batch, y_batch = zip(*batch)
-            train_step(x_batch, y_batch)
+            self.train_step(x_batch, y_batch, sess)
             current_step = tf.train.global_step(sess, global_step)
             if current_step % FLAGS.evaluate_every == 0:
                 print("\nEvaluation:")
-                dev_step(x_dev, y_dev, writer=dev_summary_writer)
+                self.dev_step(x_dev, y_dev, sess, writer=dev_summary_writer)
                 print("")
             if current_step % FLAGS.checkpoint_every == 0:
                 path = saver.save(sess, checkpoint_prefix, global_step=current_step)
