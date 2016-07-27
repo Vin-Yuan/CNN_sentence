@@ -54,11 +54,12 @@ VocabEmbedModels.append(VocabEmbedding)
 word2vec_map = np.expand_dims(word2vec_map, axis=-1)
 x = word2vec_map
 # two channels (static and non-static) which are the same scale (300 word2vec)
-
+'''
 x = np.concatenate((x,x), axis=-1)
 VocabEmbedding2 = VocabEmbedding.copy()
 VocabEmbedding2['static'] = True
 VocabEmbedModels.append(VocabEmbedding2)
+'''
 #-------------------------------------------------------------------------------------------------------------------
 
 # Randomly shuffle data
@@ -137,7 +138,7 @@ with tf.Graph().as_default():
         saver = tf.train.Saver(tf.all_variables(), max_to_keep = 0)
 
         # Write vocabulary
-        #vocab_processor.save(os.path.join(out_dir, "vocab"))
+        # vocab_processor.save(os.path.join(out_dir, "vocab"))
 
         # Initialize all variables
         sess.run(tf.initialize_all_variables())

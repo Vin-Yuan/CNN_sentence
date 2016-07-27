@@ -2,11 +2,12 @@ import numpy as np
 import re
 import itertools
 from collections import Counter
-import cPickle
 from collections import defaultdict
 import pandas as pd
-from tensorflow.contrib import learn
+import os
+import cPickle
 import ipdb
+
 def build_data_cv(text,label, cv=10, clean_string=True):
     """ Loads data and split into 10 folds.
     Argument:
@@ -36,21 +37,6 @@ def build_data_cv(text,label, cv=10, clean_string=True):
         }
         sentences_info.append(datum)
     return sentences_info, vocab
-
-def get_W(word_vecs, k=300):
-    """
-    Get word matrix. W[i] is the vector for word indexed by i
-    """
-    vocab_size = len(word_vecs)
-    word_idx_map = dict()
-    W = np.zeros(shape=(vocab_size+1, k), dtype='float32')            
-    W[0] = np.zeros(k, dtype='float32')
-    i = 1
-    for word in word_vecs:
-        W[i] = word_vecs[word]
-        word_idx_map[word] = i
-        i += 1
-    return W, word_idx_map
 
 def load_bin_vec(fname, vocab):
     """
@@ -91,6 +77,7 @@ def add_unknown_words(word_vecs, vocab, min_df=1, k=300):
     for word in vocab:
         if word not in word_vecs and vocab[word] >= min_df:
             word_vecs[word] = np.random.uniform(-0.25,0.25,k) 
+
 def clean_str(string):
     """
     Tokenization/string cleaning for all datasets except for SST.
@@ -111,79 +98,90 @@ def clean_str(string):
     string = re.sub(r"\s{2,}", " ", string)
     return string.strip().lower()
 
+# load text and labels from file:
+def load_data_and_labels_(filepath):
+    # expected csv file
+    records = []
+    with open(filepath, 'r') as f:
+        records = f.readlines()
+    labels = []
+    sentences = []
+    for line in records:
+        piv = line.find('\t')
+        labels.append(line[0:piv])
+        sentences.append(line[piv+1:])
+    # clean sentences
+    sentences = [clean_str(sent) for sent in sentences]
+    return sentences, labels
 
-def load_data_and_labels():
+# get the y based on labels
+def get_Y(labels):
     """
-    Loads MR polarity data from files, splits the data into words and generates labels.
-    Returns split sentences and labels.
-    x_text: a list by list which split by sentences and split by words 
-    y: a list by list for class num and sentences num
+        y: a list of list, which every item is a one-hot vector
     """
-    # Load data from files
-    positive_examples = list(open("./data/rt-polaritydata/rt-polarity.pos", "r").readlines())
-    positive_examples = [s.strip() for s in positive_examples]
-    negative_examples = list(open("./data/rt-polaritydata/rt-polarity.neg", "r").readlines())
-    negative_examples = [s.strip() for s in negative_examples]
-    # Split by words
-    x_text = positive_examples + negative_examples
-    x_text = [clean_str(sent) for sent in x_text]
-    # x_text = [x.split(' ') for x in x_text]
-    # pos/neg label is 0 or 1
-    pos_label = np.zeros(len(positive_examples))
-    neg_label = np.ones(len(negative_examples))
-    labels = np.concatenate((pos_label, neg_label))
-    # Generate labels is [0,1] or [1,0]
-    positive_labels = [[0,1] for _ in positive_examples]
-    negative_labels = [[1,0] for _ in negative_examples] 
-    y = np.concatenate([positive_labels, negative_labels], 0)
-    return x_text, y
-
-def getEmbedding(x_text, sequence_length, static=True, name=None):
-    """
-    Argument:
-        x_text : [batchsize, sentence]
-        sequence_length: the max length over all sentences, used for word2vec_map 
-    Return:
-        VocabEmbedding:
-            the vocabulary embedding as lookup tabel, a dict like 
-                {name:str, embedding:np.narray, static:True(or False)}
-                embedding : [vocabulary_size, embedding_size], 
-        word2vec_map: [batchsize, sequence_length] ,the index which map word to vector
-    """
-    x = cPickle.load(open("mr.p","rb"))
-    revs, W, W2, word2vec_map, vocab = x[0], x[1], x[2], x[3], x[4]
-    # W : [vocab_size , embeding_size], a lookup table
-    # word2vec_map : [vocab_size-1 , sequence_length], a index map for every word in vocabulary
-    textW2V_map= np.zeros((len(x_text), sequence_length))
-    for idx, sentence in enumerate(x_text):
-        words = sentence.split(' ')
-        for j, word in enumerate(words):
-            textW2V_map[idx][j] = word2vec_map[word]
-    VocabEmbedding = {'name':name, 'embedding':W, 'static':static}
-    return VocabEmbedding, textW2V_map 
-def getRandEmbedding(x_text, embedding_size, sequence_length, static=True, name='random_embedding'):
-    vocab_processor = learn.preprocessing.VocabularyProcessor(sequence_length)
-    x = np.array(list(vocab_processor.fit_transform(x_text)),dtype=np.float32)
-    vocab_size = len(vocab_processor.vocabulary_)
-    embedding = np.random.uniform(-1.0, 1.0, (vocab_size, embedding_size)).astype(np.float32)
-    VocabEmbedding = {'name':name, 'embedding':embedding, 'static':static}
-    return VocabEmbedding, x
-def get_Y(label, class_num):
-    """
-     Argument:
-        label: a list contains the label number
-     Return:
-        y: the np.narray [len(label), class_num], which every item is a one-hot vector
-    """
-    y = np.zeros((len(label), class_num))
-    for idx, class_map in label:
-        y[idx][class_map] = 1;
+    class_count = Counter(labels)
+    labels_name = class_count.keys()
+    labels_name.sort()          # lexicographical
+    class_num = len(labels_name)
+    labels_map = {}
+    for idx, name in enumerate(labels_name):
+        temp = [0] * class_num
+        temp[idx] = 1
+        labels_map[name] = temp
+    y = [labels_map[x] for x in labels]
     return y
+
+# get the vocabulary (consider the min_count and max_count in future)
+def getVocabulary(x_text, max_vocabulary_size=5000):
+    words = []
+    for line in x_text:
+        words.extend(line.split(' '))
+
+    words_count = Counter(words)
+    if len(words_count) > max_vocabulary_size:
+        words_count = words_count.most_common(max_vocabulary_size- 1)
+        words_count = dict(words_count)
+    vocab = words_count.keys()
+    return vocab
+
+# get the x (words to index to table) and local lookup table 
+def localEmbedding(x_text, word2vecFile, maxSentenceLength, vocabulary):
+    w2v_map = load_bin_vec(word2vecFile, vocabulary)
+    embedding_size = values()[0].shape[-1]
+    add_unknown_words(w2v_map, vocab=vocabulary, k=embedding_size)
+    W, words_map = getLookUpTable(w2v_map) 
+    return W, words_map
+
+# get the x (words to index to table) and ramdom lookup table 
+def randomEmbedding(x_text, embedding_size, maxSentenceLength, vocabulary):
+    w2v_map = {}
+    add_unknown_words(w2v_map, vocab=vocabulary, k=embedding_size)
+    W, words_map = getLookUpTable(w2v_map)
+    return W, words_map
+
+# get the lookup table and words index to table
+def getLookUpTable(word_vecs):
+    """
+    Get word matrix. W[i] is the vector for word indexed by i
+    """
+    vocab_size = len(word_vecs)
+    embedding_size = word_vecs.values()[0].shape[-1]
+    word_idx_map = dict()
+    W = np.zeros(shape=(vocab_size+1, embedding_size), dtype='float32')            
+    W[0] = np.zeros(embedding_size, dtype='float32')
+    i = 1
+    for word in word_vecs:
+        W[i] = word_vecs[word]
+        word_idx_map[word] = i
+        i += 1
+    return W, word_idx_map
+
+# batch_iter on processed data
 def batch_iter(data, batch_size, num_epochs, shuffle=True):
     """
     Generates a batch iterator for a dataset.
     """
-    data = np.array(data)
+    data = np.array(data, dtype=np.float32)
     data_size = len(data)
     num_batches_per_epoch = int(len(data)/batch_size) + 1
     for epoch in range(num_epochs):
@@ -198,31 +196,165 @@ def batch_iter(data, batch_size, num_epochs, shuffle=True):
             end_index = min((batch_num + 1) * batch_size, data_size)
             yield shuffled_data[start_index:end_index]
 
-def build_word2vec_vocabulary(w2v_file, text, label, dumpFilePath):
-    """
-    Argument:
-        w2v_file: the binary file of pretrained w2v_file
-        text: list of setences
-        label: a list, label of every sentence in text
-    Return:
-        None
-        this will dump a cPickle file which contain:
-        sentences_info, vocab_w2v, random_w2v, word_idx_map, vocab
-    """
-    sentences_info, vocab = build_data_cv(text, label, cv=10, clean_string=True)
-    maxSentenceLength = np.max(pd.DataFrame(sentences_info)["words_num"])
-    print "number of sentences: " + str(len(sentences_info))
-    print "vocab size: " + str(len(vocab))
-    print "max sentence length: " + str(maxSentenceLength)
-    print "loading word2vec vectors...",
-    w2v = load_bin_vec(w2v_file, vocab)
-    print "word2vec loaded!"
-    print "num words already in word2vec: " + str(len(w2v))
-    add_unknown_words(w2v, vocab)
-    vocab_w2v, word_idx_map = get_W(w2v)
-    rand_vecs = {}
-    add_unknown_words(rand_vecs, vocab)
-    random_w2c, _ = get_W(rand_vecs) 
-    cPickle.dump([sentences_info, vocab_w2v, random_w2v, word_idx_map, vocab], open(dumpFilePath, "wb"))
-    print "dataset created!"
+class DataProcessor(object):
+    def __init__(self, embedding_size=300, maxSentenceLength=100):
+        self.train_text = None
+        self.dev_text = None
+        self.train_x = None
+        self.train_y = None
+        self.labels_name = None
+        self.dev_x = None
+        self.dev_y = None
+        self.W_list = [] 
+        self.W_words_maps = []
+        self.embedding_size = embedding_size
+        self.vocab = None
+        self.maxSentenceLength = maxSentenceLength
+    # load text and labels from train file:
+    def load_train_file(self, filepath):
+        self.train_text, labels = self.load_data_and_labels(filepath)
+        self.vocab, self.maxSentenceLength = self.getVocabulary(self.train_text)
+        self.train_y, self.labels_name = self.get_Y(labels)
+    def load_dev_file(self, filepath):
+        self.dev_text, labels = self.load_data_and_labels(filepath)
+        self.dev_y, _ = self.get_Y(labels)
+    def load_data_and_labels(self, filepath):
+        # expected csv file
+        records = []
+        with open(filepath, 'r') as f:
+            records = f.readlines()
+        labels = []
+        sentences = []
+        for line in records:
+            piv = line.find('\t')
+            labels.append(line[0:piv])
+            sentences.append(line[piv+1:])
+        # clean sentences
+        sentences = [clean_str(sent) for sent in sentences]
+        return sentences, labels
+
+    def get_Y(self, labels):
+        """
+            y: a list of list, which every item is a one-hot vector
+        """
+        class_count = Counter(labels)
+        labels_name = class_count.keys()
+        labels_name.sort()          # lexicographical
+        class_num = len(labels_name)
+        labels_map = {}
+        for idx, name in enumerate(labels_name):
+            temp = [0] * class_num
+            temp[idx] = 1
+            labels_map[name] = temp
+        y = [labels_map[x] for x in labels]
+        y = np.array(y, dtype=np.float32)
+        return y, labels_name
+
+    def add_W(self, word2vecFile=None):
+        if word2vecFile:
+            fileDir, filename = os.path.split(word2vecFile)
+            filename = os.path.splitext(filename)[0]
+            processed_w2v_file = os.path.join(fileDir,filename+'.select')
+            if os.path.isfile(processed_w2v_file):
+                temp = cPickle.load(open(processed_w2v_file, 'rb'))
+                w2v_map = temp[0]
+            else:
+                w2v_map = load_bin_vec(word2vecFile, self.vocab)
+                cPickle.dump([w2v_map], open(processed_w2v_file, 'wb'))
+            # may be adjust the w2v_map to form same embedding_size
+            embedding_size = w2v_map.values()[0].shape[-1]
+            add_unknown_words(w2v_map, vocab=self.vocab, k=embedding_size)
+            W, words_map = getLookUpTable(w2v_map) 
+            self.W_list.append(W)
+            self.W_words_maps.append(words_map)
+        else:
+            w2v_map = {}
+            add_unknown_words(w2v_map, vocab=self.vocab, k=self.embedding_size)
+            W, words_map = getLookUpTable(w2v_map)
+            self.W_list.append(W)
+            self.W_words_maps.append(words_map)
+    def getVocabulary(self, x_text, max_vocabulary_size=8000):
+        words = []
+        maxSentenceLength = 0
+        for line in x_text:
+            temp = line.split(' ')
+            maxSentenceLength = max(maxSentenceLength, len(temp))
+            words.extend(temp)
+        words_count = Counter(words)
+        if len(words_count) > max_vocabulary_size:
+            print 'statistic vocaulary size : ', len(words_count)
+            words_count = words_count.most_common(max_vocabulary_size- 1)
+            words_count = dict(words_count)
+        #vocab = words_count.keys()
+        maxSentenceLength = min(maxSentenceLength, self.maxSentenceLength) 
+        return words_count, maxSentenceLength 
+
+    def text2x(self, x_text):
+        embedModel = zip(self.W_list, self.W_words_maps)
+        collect_x = None
+        for W, words_map in embedModel:
+            x = np.zeros((len(x_text), self.maxSentenceLength))
+            for i, line in enumerate(x_text):
+                words = line.split(' ')
+                end = min(self.maxSentenceLength, len(words))
+                for j in range(end):
+                    if(words_map.has_key(words[j])):
+                        x[i][j] = words_map[words[j]]
+                    else:
+                        x[i][j] = 0
+            x = np.expand_dims(x, axis=-1)
+            if collect_x is None:
+                collect_x = x
+            else:
+                collect_x = np.concatenate((collect_x, x), axis=-1)
+        return collect_x
     
+    def train_text2x(self):
+        x = self.text2x(self.train_text)
+        self.train_x = np.array(x, dtype=np.float32)
+    
+    def dev_text2x(self):
+        x = self.text2x(self.dev_text)
+        self.dev_x = np.array(x, dtype=np.float32)
+    # batch_iter on processed data
+    def batch_iter(self, batch_size, num_epochs, shuffle=True):
+        """
+        Generates a batch iterator for a dataset.
+        """
+        data = list(zip(self.train_x, self.train_y))
+        data = np.array(data)
+        data_size = len(data)
+        num_batches_per_epoch = int(data_size/batch_size) + 1
+        for epoch in range(num_epochs):
+            # Shuffle the data at each epoch
+            if shuffle:
+                shuffle_indices = np.random.permutation(np.arange(data_size))
+                shuffled_data = data[shuffle_indices]
+            else:
+                shuffled_data = data
+            for batch_num in range(num_batches_per_epoch):
+                start_index = batch_num * batch_size
+                end_index = min((batch_num + 1) * batch_size, data_size)
+                yield shuffled_data[start_index:end_index]
+
+if __name__ == "__main__":
+    train_file = 'data/backup/TREC/train.label'
+    dev_file = 'data/backup/TREC/dev.label'
+    #x_text, y = load_data_and_labels_(filename)
+    data_processor = DataProcessor()
+    data_processor.load_train_file(train_file)
+    data_processor.load_dev_file(dev_file)
+    data_processor.add_W('./data/GoogleNews-vectors-negative300.bin')
+    data_processor.add_W()
+    data_processor.train_text2x()
+    data_processor.dev_text2x()
+    print 'vocab size', len(data_processor.vocab)
+    print 'W:',data_processor.W_list[0].shape
+    print 'x:',data_processor.train_x[:,:,0].shape
+    print 'label:',data_processor.labels_name
+    print 'train:', data_processor.train_x.shape
+    print 'dev:', data_processor.dev_x.shape
+    '''
+    for batch in data_processor.batch_iter(batch_size=512, num_epochs=1, shuffle=True):
+        print batch.shape
+    '''
