@@ -105,7 +105,8 @@ class TextCNN(object):
             correct_predictions = tf.equal(self.predictions, tf.argmax(self.input_y, 1))
             self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
 
-    def Trainer(self, data_processor):
+    def Trainer(self, data_processor, resume_train_checkpoint = None):
+    # resume_train is checkpoint file path
         graph = tf.get_default_graph()
         #with tf.Graph().as_default():
         with graph.as_default():
@@ -132,7 +133,6 @@ class TextCNN(object):
                 
                 # Output directory for models and summaries
                 timestamp = str(int(time.time()))
-                #timestamp = datetime.datetime.now().strftime("%y-%m-%d_%H_%M_%S")
                 out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", timestamp))
                 print("Writing to {}\n".format(out_dir))
 
@@ -156,13 +156,14 @@ class TextCNN(object):
                 if not os.path.exists(checkpoint_dir):
                     os.makedirs(checkpoint_dir)
                 self.saver = tf.train.Saver(tf.all_variables(), max_to_keep = 0)
-
-                # Write vocabulary
-                # vocab_processor.save(os.path.join(out_dir, "vocab"))
-
-                # Initialize all variables
-                sess.run(tf.initialize_all_variables())
-                self.batch_train(sess, data_processor, batch_size=64, num_epochs=100)
+                if resume_train_checkpoint is None:
+                    # Initialize all variables
+                    sess.run(tf.initialize_all_variables())
+                    self.batch_train(sess, data_processor, batch_size=64, num_epochs=100)
+                else:
+                    self.saver.restore(sess, resume_train_checkpoint)
+                    print("Model restored.")
+                    self.batch_train(sess, data_processor, batch_size=64, num_epochs=100)
     def train_step(self, x_batch, y_batch, sess):
         """
         A single training step
@@ -190,10 +191,10 @@ class TextCNN(object):
         step, summaries, loss, accuracy = sess.run(
             [self.global_step, self.dev_summary_op, self.loss, self.accuracy],
             feed_dict)
-        time_str = datetime.datetime.now().isoformat()
-        print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
+        #print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
         if writer:
             writer.add_summary(summaries, step)
+        return loss, accuracy
 
     def batch_train(self, sess, data_processor, batch_size=64, num_epochs=100):
         # Generate batches
@@ -209,16 +210,25 @@ class TextCNN(object):
             if current_step % 100 == 0:
                 print("\nEvaluation:")
                 if dev_num < 30000:
-                    self.dev_step(
+                    loss, accuracy = self.dev_step(
                         data_processor.dev_x, data_processor.dev_y, 
                         sess, writer=self.dev_summary_writer)
                 else:
                     dev_batches = data_processor.batch_iter(
                         data_processor.dev_x, data_processor.dev_y,
                         batch_size=10000, num_epochs=1, shuffle=True)
+                    loss, accuracy = [], [];
                     for dev_batch in dev_batches:
                         dev_x_batch, dev_y_batch = zip(*dev_batch)
-                        dev_step(dev_x_batch, dev_y_batch, sess, writer=self.dev_summary_writer)
+                        loss_batch, accuracy_batch = self.dev_step(
+                            dev_x_batch, dev_y_batch, sess, writer=self.dev_summary_writer)
+                        loss.append(loss_batch)
+                        accuracy.append(accuracy_batch)
+                    loss = float(sum(loss)) / len(loss)
+                    accuracy = float(sum(accuracy)) / len(accuracy)
+                step = self.global_step.eval()
+                time_str = datetime.datetime.now().isoformat()
+                print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
                 print("")
             #if current_step % FLAGS.checkpoint_every == 0:
             if current_step % 100 == 0:
