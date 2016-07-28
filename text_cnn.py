@@ -1,14 +1,17 @@
 import tensorflow as tf
 import numpy as np
+import time
+import datetime
 import cPickle
+import os
 import ipdb
 
 
-tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
-tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
-tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
-FLAGS = tf.flags.FLAGS
-FLAGS._parse_flags()
+#tf.flags.DEFINE_float("dropout_keep_prob", 0.5, "Dropout keep probability (default: 0.5)")
+#tf.flags.DEFINE_integer("evaluate_every", 100, "Evaluate model on dev set after this many steps (default: 100)")
+#tf.flags.DEFINE_integer("checkpoint_every", 100, "Save model after this many steps (default: 100)")
+#FLAGS = tf.flags.FLAGS
+#FLAGS._parse_flags()
 class TextCNN(object):
     """
     A CNN for text classification.
@@ -16,7 +19,7 @@ class TextCNN(object):
     """
     def __init__(
       self, sequence_length, num_classes,
-      filter_sizes, num_filters, VocabEmbeddings, channel_num, l2_reg_lambda=0.0):
+      filter_sizes, num_filters, VocabEmbeddings, channel_num, channel_static, l2_reg_lambda=0.0):
         """
             sequence_length: the length of every sentence
             VocabEmbeddings: a list contains the different embeddings for multi channel
@@ -34,13 +37,13 @@ class TextCNN(object):
         # Embedding layer
         Embeddings = [] 
         with tf.device('/cpu:0'), tf.name_scope("embedding"):
-            for idx, vocab in enumerate(VocabEmbeddings):
-                if vocab['static']:
-                    print 'name:{0}, static , embedding_size: {1}'.format(vocab['name'],vocab['embedding'].shape[-1])
-                    W = tf.constant(vocab['embedding'], name=vocab['name'])
+            for idx, W in enumerate(VocabEmbeddings):
+                if channel_static[idx]:
+                    print 'static , embedding_size: {}'.format(W.shape[-1])
+                    W = tf.constant(W, name='static')
                 else:
-                    print 'name:{0}, non-static , embedding_size: {1}'.format(vocab['name'],vocab['embedding'].shape[-1])
-                    W = tf.Variable(vocab['embedding'], name=vocab['name'])
+                    print 'non-static , embedding_size: {}'.format(W.shape[-1])
+                    W = tf.Variable(W, name='non_static')
                 embedded_chars = tf.nn.embedding_lookup(W, self.input_x[:,:,idx])
                 Embeddings.append(tf.expand_dims(embedded_chars, -1))
 
@@ -103,18 +106,20 @@ class TextCNN(object):
             self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
 
     def Trainer(self, data_processor):
-        with tf.Graph().as_default():
+        graph = tf.get_default_graph()
+        #with tf.Graph().as_default():
+        with graph.as_default():
             session_conf = tf.ConfigProto(
               allow_soft_placement=True,
               log_device_placement=False)
             sess = tf.Session(config=session_conf)
             with sess.as_default():
                 # Define Training procedure
-                global_step = tf.Variable(0, name="global_step", trainable=False)
+                self.global_step = tf.Variable(0, name="global_step", trainable=False)
                 optimizer = tf.train.AdamOptimizer(1e-3)
-                grads_and_vars = optimizer.compute_gradients(self.loss)
-                train_op = optimizer.apply_gradients(grads_and_vars, global_step=global_step)
-
+                grads_and_vars = optimizer.compute_gradients(loss=self.loss)
+                self.train_op = optimizer.apply_gradients(grads_and_vars, global_step=self.global_step)
+                
                 # Keep track of gradient values and sparsity (optional)
                 grad_summaries = []
                 for g, v in grads_and_vars:
@@ -124,7 +129,7 @@ class TextCNN(object):
                         grad_summaries.append(grad_hist_summary)
                         grad_summaries.append(sparsity_summary)
                 grad_summaries_merged = tf.merge_summary(grad_summaries)
-
+                
                 # Output directory for models and summaries
                 timestamp = str(int(time.time()))
                 #timestamp = datetime.datetime.now().strftime("%y-%m-%d_%H_%M_%S")
@@ -136,28 +141,28 @@ class TextCNN(object):
                 acc_summary = tf.scalar_summary("accuracy", self.accuracy)
 
                 # Train Summaries
-                train_summary_op = tf.merge_summary([loss_summary, acc_summary, grad_summaries_merged])
+                self.train_summary_op = tf.merge_summary([loss_summary, acc_summary, grad_summaries_merged])
                 train_summary_dir = os.path.join(out_dir, "summaries", "train")
-                train_summary_writer = tf.train.SummaryWriter(train_summary_dir, sess.graph)
+                self.train_summary_writer = tf.train.SummaryWriter(train_summary_dir, sess.graph)
 
                 # Dev summaries
-                dev_summary_op = tf.merge_summary([loss_summary, acc_summary])
+                self.dev_summary_op = tf.merge_summary([loss_summary, acc_summary])
                 dev_summary_dir = os.path.join(out_dir, "summaries", "dev")
-                dev_summary_writer = tf.train.SummaryWriter(dev_summary_dir, sess.graph)
+                self.dev_summary_writer = tf.train.SummaryWriter(dev_summary_dir, sess.graph)
 
                 # Checkpoint directory. Tensorflow assumes this directory already exists so we need to create it
                 checkpoint_dir = os.path.abspath(os.path.join(out_dir, "checkpoints"))
-                checkpoint_prefix = os.path.join(checkpoint_dir, "model")
+                self.checkpoint_prefix = os.path.join(checkpoint_dir, "model")
                 if not os.path.exists(checkpoint_dir):
                     os.makedirs(checkpoint_dir)
-                saver = tf.train.Saver(tf.all_variables(), max_to_keep = 0)
+                self.saver = tf.train.Saver(tf.all_variables(), max_to_keep = 0)
 
                 # Write vocabulary
                 # vocab_processor.save(os.path.join(out_dir, "vocab"))
 
                 # Initialize all variables
                 sess.run(tf.initialize_all_variables())
-                batch_train(sess, data_processor, batch_size=64, num_epochs=100)
+                self.batch_train(sess, data_processor, batch_size=64, num_epochs=100)
     def train_step(self, x_batch, y_batch, sess):
         """
         A single training step
@@ -165,14 +170,14 @@ class TextCNN(object):
         feed_dict = {
           self.input_x: x_batch,
           self.input_y: y_batch,
-          self.dropout_keep_prob: FLAGS.dropout_keep_prob
+          self.dropout_keep_prob: 0.5 #FLAGS.dropout_keep_prob
         }
         _, step, summaries, loss, accuracy = sess.run(
-            [train_op, global_step, train_summary_op, self.loss, self.accuracy],
+            [self.train_op, self.global_step, self.train_summary_op, self.loss, self.accuracy],
             feed_dict)
         time_str = datetime.datetime.now().isoformat()
         print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
-        train_summary_writer.add_summary(summaries, step)
+        self.train_summary_writer.add_summary(summaries, step)
     def dev_step(self, x_batch, y_batch, sess, writer=None):
         """
         Evaluates model on a dev set
@@ -183,7 +188,7 @@ class TextCNN(object):
           self.dropout_keep_prob: 1.0
         }
         step, summaries, loss, accuracy = sess.run(
-            [global_step, dev_summary_op, self.loss, self.accuracy],
+            [self.global_step, self.dev_summary_op, self.loss, self.accuracy],
             feed_dict)
         time_str = datetime.datetime.now().isoformat()
         print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
@@ -192,18 +197,30 @@ class TextCNN(object):
 
     def batch_train(self, sess, data_processor, batch_size=64, num_epochs=100):
         # Generate batches
-        batches = data_processor.batch_iter(batch_size, num_epochs)
-        x_dev = data_processor.dev_x
-        y_dev = data_processor.dev_y
+        train_batches = data_processor.batch_iter(data_processor.train_x, data_processor.train_y,
+            batch_size, num_epochs)
+        dev_num = data_processor.dev_x.shape[0]
         # Training loop. For each batch...
-        for batch in batches:
-            x_batch, y_batch = zip(*batch)
-            self.train_step(x_batch, y_batch, sess)
-            current_step = tf.train.global_step(sess, global_step)
-            if current_step % FLAGS.evaluate_every == 0:
+        for train_batch in train_batches:
+            train_x_batch, train_y_batch = zip(*train_batch)
+            self.train_step(train_x_batch, train_y_batch, sess)
+            current_step = tf.train.global_step(sess, self.global_step)
+            #if current_step % FLAGS.evaluate_every == 0:
+            if current_step % 100 == 0:
                 print("\nEvaluation:")
-                self.dev_step(x_dev, y_dev, sess, writer=dev_summary_writer)
+                if dev_num < 30000:
+                    self.dev_step(
+                        data_processor.dev_x, data_processor.dev_y, 
+                        sess, writer=self.dev_summary_writer)
+                else:
+                    dev_batches = data_processor.batch_iter(
+                        data_processor.dev_x, data_processor.dev_y,
+                        batch_size=10000, num_epochs=1, shuffle=True)
+                    for dev_batch in dev_batches:
+                        dev_x_batch, dev_y_batch = zip(*dev_batch)
+                        dev_step(dev_x_batch, dev_y_batch, sess, writer=self.dev_summary_writer)
                 print("")
-            if current_step % FLAGS.checkpoint_every == 0:
-                path = saver.save(sess, checkpoint_prefix, global_step=current_step)
+            #if current_step % FLAGS.checkpoint_every == 0:
+            if current_step % 100 == 0:
+                path = self.saver.save(sess, self.checkpoint_prefix, global_step=current_step)
                 print("Saved model checkpoint to {}\n".format(path))

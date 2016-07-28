@@ -237,23 +237,32 @@ class DataProcessor(object):
         """
             y: a list of list, which every item is a one-hot vector
         """
-        class_count = Counter(labels)
-        labels_name = class_count.keys()
-        labels_name.sort()          # lexicographical
-        class_num = len(labels_name)
-        labels_map = {}
-        for idx, name in enumerate(labels_name):
-            temp = [0] * class_num
-            temp[idx] = 1
-            labels_map[name] = temp
-        y = [labels_map[x] for x in labels]
-        y = np.array(y, dtype=np.float32)
+        if self.labels_name == None:
+            class_count = Counter(labels)
+            labels_name = class_count.keys()
+            labels_name.sort()          # lexicographical
+            class_num = len(labels_name)
+            labels_map = {}
+            for idx, name in enumerate(labels_name):
+                temp = [0] * class_num
+                temp[idx] = 1
+                labels_map[name] = temp
+            y = [labels_map[x] for x in labels]
+            y = np.array(y, dtype=np.float32)
+        else:
+            labels_map = dict(enumerate(self.labels_name))
+            labels_map = {v:k for k, v in labels_map.items()}
+            y = np.zeros((len(labels), len(self.labels_name)), dtype=np.float32)
+            for idx, label in enumerate(labels):
+                y[idx][labels_map[label]] = 1
+            labels_name = self.labels_name
         return y, labels_name
 
-    def add_W(self, word2vecFile=None):
+    def add_W(self,word2vecFile=None, name="W"):
         if word2vecFile:
             fileDir, filename = os.path.split(word2vecFile)
             filename = os.path.splitext(filename)[0]
+            filename = filename + '_' + name
             processed_w2v_file = os.path.join(fileDir,filename+'.select')
             if os.path.isfile(processed_w2v_file):
                 temp = cPickle.load(open(processed_w2v_file, 'rb'))
@@ -317,7 +326,7 @@ class DataProcessor(object):
         x = self.text2x(self.dev_text)
         self.dev_x = np.array(x, dtype=np.float32)
     # batch_iter on processed data
-    def batch_iter(self, batch_size, num_epochs, shuffle=True):
+    def batch_iter(self, x, y,  batch_size, num_epochs, shuffle=True):
         """
         Generates a batch iterator for a dataset.
         """
@@ -344,8 +353,8 @@ if __name__ == "__main__":
     data_processor = DataProcessor()
     data_processor.load_train_file(train_file)
     data_processor.load_dev_file(dev_file)
-    data_processor.add_W('./data/GoogleNews-vectors-negative300.bin')
-    data_processor.add_W()
+    data_processor.add_W('./data/GoogleNews-vectors-negative300.bin', name='TREC',)
+    data_processor.add_W(name='Random')
     data_processor.train_text2x()
     data_processor.dev_text2x()
     print 'vocab size', len(data_processor.vocab)
@@ -355,6 +364,7 @@ if __name__ == "__main__":
     print 'train:', data_processor.train_x.shape
     print 'dev:', data_processor.dev_x.shape
     '''
-    for batch in data_processor.batch_iter(batch_size=512, num_epochs=1, shuffle=True):
+    for batch in data_processor.batch_iter(data_processor.train_x,data_processor.train_y,
+        batch_size=512, num_epochs=1, shuffle=True):
         print batch.shape
     '''
