@@ -8,36 +8,6 @@ import os
 import cPickle
 import ipdb
 
-def build_data_cv(text,label, cv=10, clean_string=True):
-    """ Loads data and split into 10 folds.
-    Argument:
-        text: a list which every item is a string of sentence
-        label: every sentence's label, so len(text) == len(label)
-    Return:
-        sentences_info: a list that every item is a dict ['label','sentence','words_num','split']
-        vocab: vocabulary statisitc info, a dict <word>:count 
-    """
-    sentences_info = []
-    vocab = defaultdict(float)
-    if clean_string:
-        text = [clean_str(sentence) for sentence in text]
-    else:
-        text = [sentence.lower() for sentence in text]
-
-    for idx, sentence in enumerate(text):
-        sentence = sentence.strip()
-        words = set(sentence.split(' '))
-        for word in words:
-            vocab[word] += 1
-        datum = {
-            "label": label[idx],
-            "sentence": sentence,
-            "words_num": len(sentence.split(' ')),
-            "split": np.random.randint(0,cv)
-        }
-        sentences_info.append(datum)
-    return sentences_info, vocab
-
 def load_bin_vec(fname, vocab):
     """
     Loads 300x1 word vecs from Google (Mikolov) word2vec and
@@ -69,15 +39,6 @@ def load_bin_vec(fname, vocab):
                 f.read(binary_len)
     return word_vecs
 
-def add_unknown_words(word_vecs, vocab, min_df=1, k=300):
-    """
-    For words that occur in at least min_df documents, create a separate word vector.    
-    0.25 is chosen so the unknown vectors have (approximately) same variance as pre-trained ones
-    """
-    for word in vocab:
-        if word not in word_vecs and vocab[word] >= min_df:
-            word_vecs[word] = np.random.uniform(-0.25,0.25,k) 
-
 def clean_str(string):
     """
     Tokenization/string cleaning for all datasets except for SST.
@@ -98,104 +59,6 @@ def clean_str(string):
     string = re.sub(r"\s{2,}", " ", string)
     return string.strip().lower()
 
-# load text and labels from file:
-def load_data_and_labels_(filepath):
-    # expected csv file
-    records = []
-    with open(filepath, 'r') as f:
-        records = f.readlines()
-    labels = []
-    sentences = []
-    for line in records:
-        piv = line.find('\t')
-        labels.append(line[0:piv])
-        sentences.append(line[piv+1:])
-    # clean sentences
-    sentences = [clean_str(sent) for sent in sentences]
-    return sentences, labels
-
-# get the y based on labels
-def get_Y(labels):
-    """
-        y: a list of list, which every item is a one-hot vector
-    """
-    class_count = Counter(labels)
-    labels_name = class_count.keys()
-    labels_name.sort()          # lexicographical
-    class_num = len(labels_name)
-    labels_map = {}
-    for idx, name in enumerate(labels_name):
-        temp = [0] * class_num
-        temp[idx] = 1
-        labels_map[name] = temp
-    y = [labels_map[x] for x in labels]
-    return y
-
-# get the vocabulary (consider the min_count and max_count in future)
-def getVocabulary(x_text, max_vocabulary_size=5000):
-    words = []
-    for line in x_text:
-        words.extend(line.split(' '))
-
-    words_count = Counter(words)
-    if len(words_count) > max_vocabulary_size:
-        words_count = words_count.most_common(max_vocabulary_size- 1)
-        words_count = dict(words_count)
-    vocab = words_count.keys()
-    return vocab
-
-# get the x (words to index to table) and local lookup table 
-def localEmbedding(x_text, word2vecFile, maxSentenceLength, vocabulary):
-    w2v_map = load_bin_vec(word2vecFile, vocabulary)
-    embedding_size = values()[0].shape[-1]
-    add_unknown_words(w2v_map, vocab=vocabulary, k=embedding_size)
-    W, words_map = getLookUpTable(w2v_map) 
-    return W, words_map
-
-# get the x (words to index to table) and ramdom lookup table 
-def randomEmbedding(x_text, embedding_size, maxSentenceLength, vocabulary):
-    w2v_map = {}
-    add_unknown_words(w2v_map, vocab=vocabulary, k=embedding_size)
-    W, words_map = getLookUpTable(w2v_map)
-    return W, words_map
-
-# get the lookup table and words index to table
-def getLookUpTable(word_vecs):
-    """
-    Get word matrix. W[i] is the vector for word indexed by i
-    """
-    vocab_size = len(word_vecs)
-    embedding_size = word_vecs.values()[0].shape[-1]
-    word_idx_map = dict()
-    W = np.zeros(shape=(vocab_size+1, embedding_size), dtype='float32')            
-    W[0] = np.zeros(embedding_size, dtype='float32')
-    i = 1
-    for word in word_vecs:
-        W[i] = word_vecs[word]
-        word_idx_map[word] = i
-        i += 1
-    return W, word_idx_map
-
-# batch_iter on processed data
-def batch_iter(data, batch_size, num_epochs, shuffle=True):
-    """
-    Generates a batch iterator for a dataset.
-    """
-    data = np.array(data, dtype=np.float32)
-    data_size = len(data)
-    num_batches_per_epoch = int(len(data)/batch_size) + 1
-    for epoch in range(num_epochs):
-        # Shuffle the data at each epoch
-        if shuffle:
-            shuffle_indices = np.random.permutation(np.arange(data_size))
-            shuffled_data = data[shuffle_indices]
-        else:
-            shuffled_data = data
-        for batch_num in range(num_batches_per_epoch):
-            start_index = batch_num * batch_size
-            end_index = min((batch_num + 1) * batch_size, data_size)
-            yield shuffled_data[start_index:end_index]
-
 class DataProcessor(object):
     def __init__(self, embedding_size=300, maxSentenceLength=100):
         self.train_text = None
@@ -213,10 +76,14 @@ class DataProcessor(object):
     # load text and labels from train file:
     def load_train_file(self, filepath):
         self.train_text, labels = self.load_data_and_labels(filepath)
+        self.train_text = [x.decode('utf8') for x in self.train_text]
         self.vocab, self.maxSentenceLength = self.getVocabulary(self.train_text)
+        print 'vocab size', len(self.vocab)
+        print 'average sentence length', self.maxSentenceLength
         self.train_y, self.labels_name = self.get_Y(labels)
     def load_dev_file(self, filepath):
         self.dev_text, labels = self.load_data_and_labels(filepath)
+        self.dev_text = [x.decode('utf8') for x in self.dev_text]
         self.dev_y, _ = self.get_Y(labels)
     def load_data_and_labels(self, filepath):
         # expected csv file
@@ -230,7 +97,7 @@ class DataProcessor(object):
             labels.append(line[0:piv])
             sentences.append(line[piv+1:])
         # clean sentences
-        sentences = [clean_str(sent) for sent in sentences]
+        #sentences = [clean_str(sent) for sent in sentences]
         return sentences, labels
 
     def get_Y(self, labels):
@@ -257,6 +124,31 @@ class DataProcessor(object):
                 y[idx][labels_map[label]] = 1
             labels_name = self.labels_name
         return y, labels_name
+    
+    def add_unknown_words(self, word_vecs, vocab, min_df=1, k=300):
+        """
+        For words that occur in at least min_df documents, create a separate word vector.    
+        0.25 is chosen so the unknown vectors have (approximately) same variance as pre-trained ones
+        """
+        for word in vocab:
+            if word not in word_vecs and vocab[word] >= min_df:
+                word_vecs[word] = np.random.uniform(-0.25,0.25,k) 
+
+    def getLookUpTable(self, word_vecs):
+        """
+        Get word matrix. W[i] is the vector for word indexed by i
+        """
+        vocab_size = len(word_vecs)
+        embedding_size = word_vecs.values()[0].shape[-1]
+        word_idx_map = dict()
+        W = np.zeros(shape=(vocab_size+1, embedding_size), dtype='float32')
+        W[0] = np.zeros(embedding_size, dtype='float32')
+        i = 1
+        for word in word_vecs:
+            W[i] = word_vecs[word]
+            word_idx_map[word] = i
+            i += 1
+        return W, word_idx_map
 
     def add_W(self,word2vecFile=None, name="W"):
         if word2vecFile:
@@ -272,30 +164,52 @@ class DataProcessor(object):
                 cPickle.dump([w2v_map], open(processed_w2v_file, 'wb'))
             # may be adjust the w2v_map to form same embedding_size
             embedding_size = w2v_map.values()[0].shape[-1]
-            add_unknown_words(w2v_map, vocab=self.vocab, k=embedding_size)
-            W, words_map = getLookUpTable(w2v_map) 
+            self.add_unknown_words(w2v_map, vocab=self.vocab, k=embedding_size)
+            W, words_map = self.getLookUpTable(w2v_map) 
             self.W_list.append(W)
             self.W_words_maps.append(words_map)
         else:
             w2v_map = {}
-            add_unknown_words(w2v_map, vocab=self.vocab, k=self.embedding_size)
-            W, words_map = getLookUpTable(w2v_map)
+            self.add_unknown_words(w2v_map, vocab=self.vocab, k=self.embedding_size)
+            W, words_map = self.getLookUpTable(w2v_map)
             self.W_list.append(W)
             self.W_words_maps.append(words_map)
+    def getOriginVocab(self):
+        words = []
+        maxSentenceLength = 0
+        for line in self.train_text:
+            temp = list(line) 
+            maxSentenceLength = max(maxSentenceLength, len(temp))
+            words.extend(temp)
+        words_count = Counter(words)
+        words_count = words_count.most_common(len(words_count))
+        with open('words_statistic.txt', 'w') as f:
+            for k, v in words_count:
+                #f.writelines('{0} {1}\n'.format(k, v))
+                f.writelines('{0} {1}\n'.format(k.encode('utf8'),v))
+        print 'origin vocabulary size (statistic) : writing to words_statistic.txt', len(words_count)
+
     def getVocabulary(self, x_text, max_vocabulary_size=8000):
         words = []
         maxSentenceLength = 0
         for line in x_text:
-            temp = line.split(' ')
-            maxSentenceLength = max(maxSentenceLength, len(temp))
+            temp = list(line) 
+            #maxSentenceLength = max(maxSentenceLength, len(temp))
+            maxSentenceLength += len(temp)
             words.extend(temp)
+        # get average nums of sentence length
+        maxSentenceLength = maxSentenceLength / len(x_text) + 5
         words_count = Counter(words)
+        # filter  words
+        '''
         if len(words_count) > max_vocabulary_size:
-            print 'statistic vocaulary size : ', len(words_count)
+            print 'origin vocabulary size (statistic) : ', len(words_count)
             words_count = words_count.most_common(max_vocabulary_size- 1)
+            print 'filter vocabulary size (used) : ', len(words_count)
             words_count = dict(words_count)
-        #vocab = words_count.keys()
-        maxSentenceLength = min(maxSentenceLength, self.maxSentenceLength) 
+        '''
+        words_count = words_count.most_common(len(words_count))
+        words_count = dict(words_count)
         return words_count, maxSentenceLength 
 
     def text2x(self, x_text):
@@ -304,7 +218,8 @@ class DataProcessor(object):
         for W, words_map in embedModel:
             x = np.zeros((len(x_text), self.maxSentenceLength))
             for i, line in enumerate(x_text):
-                words = line.split(' ')
+                #words = line.split(' ')
+                words = list(line)
                 end = min(self.maxSentenceLength, len(words))
                 for j in range(end):
                     if(words_map.has_key(words[j])):
@@ -330,7 +245,7 @@ class DataProcessor(object):
         """
         Generates a batch iterator for a dataset.
         """
-        data = list(zip(self.train_x, self.train_y))
+        data = list(zip(x, y))
         data = np.array(data)
         data_size = len(data)
         num_batches_per_epoch = int(data_size/batch_size) + 1

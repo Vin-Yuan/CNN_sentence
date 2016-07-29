@@ -105,7 +105,7 @@ class TextCNN(object):
             correct_predictions = tf.equal(self.predictions, tf.argmax(self.input_y, 1))
             self.accuracy = tf.reduce_mean(tf.cast(correct_predictions, "float"), name="accuracy")
 
-    def Trainer(self, data_processor, resume_train_checkpoint = None):
+    def Trainer(self, data_processor, checkpoint_file = None):
     # resume_train is checkpoint file path
         graph = tf.get_default_graph()
         #with tf.Graph().as_default():
@@ -132,8 +132,11 @@ class TextCNN(object):
                 grad_summaries_merged = tf.merge_summary(grad_summaries)
                 
                 # Output directory for models and summaries
-                timestamp = str(int(time.time()))
-                out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", timestamp))
+                if not hasattr(self, 'logdir'):
+                    timestamp = str(int(time.time()))
+                    out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", timestamp))
+                else:
+                    out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs",self.logdir))
                 print("Writing to {}\n".format(out_dir))
 
                 # Summaries for loss and accuracy
@@ -156,12 +159,13 @@ class TextCNN(object):
                 if not os.path.exists(checkpoint_dir):
                     os.makedirs(checkpoint_dir)
                 self.saver = tf.train.Saver(tf.all_variables(), max_to_keep = 0)
-                if resume_train_checkpoint is None:
+                if checkpoint_file is None:
                     # Initialize all variables
                     sess.run(tf.initialize_all_variables())
                     self.batch_train(sess, data_processor, batch_size=64, num_epochs=100)
                 else:
-                    self.saver.restore(sess, resume_train_checkpoint)
+                    print("load checkpoint ......")
+                    self.saver.restore(sess, checkpoint_file)
                     print("Model restored.")
                     self.batch_train(sess, data_processor, batch_size=64, num_epochs=100)
     def train_step(self, x_batch, y_batch, sess):
@@ -179,28 +183,54 @@ class TextCNN(object):
         time_str = datetime.datetime.now().isoformat()
         print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
         self.train_summary_writer.add_summary(summaries, step)
-    def dev_step(self, x_batch, y_batch, sess, writer=None):
+    def dev_step(self, data_processor, sess, writer=None):
         """
         Evaluates model on a dev set
         """
-        feed_dict = {
-          self.input_x: x_batch,
-          self.input_y: y_batch,
-          self.dropout_keep_prob: 1.0
-        }
-        step, summaries, loss, accuracy = sess.run(
-            [self.global_step, self.dev_summary_op, self.loss, self.accuracy],
-            feed_dict)
-        #print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
+        x = data_processor.dev_x
+        y = data_processor.dev_y
+        dev_num = x.shape[0]
+        print("dev data size: {}".format(dev_num))
+        loss = None
+        accuracy = None
+        if dev_num < 10000:
+            feed_dict = {
+              self.input_x: x,
+              self.input_y: y,
+              self.dropout_keep_prob: 1.0
+            }
+            summaries, loss, accuracy = sess.run(
+                [self.dev_summary_op, self.loss, self.accuracy],
+                feed_dict)
+        else:
+            dev_batches = data_processor.batch_iter(x, y,
+                batch_size=10000, num_epochs=1, shuffle=True)
+            loss_, accuracy_ = [], [];
+            for dev_batch in dev_batches:
+                dev_x_batch, dev_y_batch = zip(*dev_batch)
+                feed_dict = {
+                  self.input_x: dev_x_batch,
+                  self.input_y: dev_y_batch,
+                  self.dropout_keep_prob: 1.0
+                }
+                summaries, loss_batch, accuracy_batch = sess.run(
+                    [self.dev_summary_op, self.loss, self.accuracy],
+                    feed_dict)
+                loss_.append(loss_batch)
+                accuracy_.append(accuracy_batch)
+            loss = float(sum(loss_)) / len(loss_)
+            accuracy = float(sum(accuracy_)) / len(accuracy_)
+        time_str = datetime.datetime.now().isoformat()
+        step = self.global_step.eval()
+        print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
         if writer:
             writer.add_summary(summaries, step)
-        return loss, accuracy
-
+    def set_logdir(self, log_dir):
+        self.logdir = log_dir
     def batch_train(self, sess, data_processor, batch_size=64, num_epochs=100):
         # Generate batches
         train_batches = data_processor.batch_iter(data_processor.train_x, data_processor.train_y,
             batch_size, num_epochs)
-        dev_num = data_processor.dev_x.shape[0]
         # Training loop. For each batch...
         for train_batch in train_batches:
             train_x_batch, train_y_batch = zip(*train_batch)
@@ -209,26 +239,7 @@ class TextCNN(object):
             #if current_step % FLAGS.evaluate_every == 0:
             if current_step % 100 == 0:
                 print("\nEvaluation:")
-                if dev_num < 30000:
-                    loss, accuracy = self.dev_step(
-                        data_processor.dev_x, data_processor.dev_y, 
-                        sess, writer=self.dev_summary_writer)
-                else:
-                    dev_batches = data_processor.batch_iter(
-                        data_processor.dev_x, data_processor.dev_y,
-                        batch_size=10000, num_epochs=1, shuffle=True)
-                    loss, accuracy = [], [];
-                    for dev_batch in dev_batches:
-                        dev_x_batch, dev_y_batch = zip(*dev_batch)
-                        loss_batch, accuracy_batch = self.dev_step(
-                            dev_x_batch, dev_y_batch, sess, writer=self.dev_summary_writer)
-                        loss.append(loss_batch)
-                        accuracy.append(accuracy_batch)
-                    loss = float(sum(loss)) / len(loss)
-                    accuracy = float(sum(accuracy)) / len(accuracy)
-                step = self.global_step.eval()
-                time_str = datetime.datetime.now().isoformat()
-                print("{}: step {}, loss {:g}, acc {:g}".format(time_str, step, loss, accuracy))
+                self.dev_step(data_processor, sess, writer=self.dev_summary_writer)
                 print("")
             #if current_step % FLAGS.checkpoint_every == 0:
             if current_step % 100 == 0:
