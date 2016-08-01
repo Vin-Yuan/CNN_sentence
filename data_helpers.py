@@ -188,7 +188,14 @@ class DataProcessor(object):
                 #f.writelines('{0} {1}\n'.format(k, v))
                 f.writelines('{0} {1}\n'.format(k.encode('utf8'),v))
         print 'origin vocabulary size (statistic) : writing to words_statistic.txt', len(words_count)
-
+    # just save the words_map, the W is also like to be save in future
+    def saveWordsMap(self, output_file):
+        cPickle.dump([self.W_list, self.W_words_maps], open(output_file, 'wb'))
+        print("W_list and W_words_maps save to {}".format(output_file))
+    def loadWordsMap(self, input_file):
+        temp = cPickle.load(open(input_file, 'rb'))
+        self.W_list, self.W_words_maps = temp[0], temp[1]
+        return self.W_list, self.W_words_maps
     def getVocabulary(self, x_text, max_vocabulary_size=8000):
         words = []
         maxSentenceLength = 0
