@@ -12,8 +12,8 @@ from tensorflow import app
 import ipdb
 
 def train():
-    train_file = 'data/insure/train.label'
-    dev_file = 'data/insure/test.label'
+    train_file = 'data/temp/train.label'
+    dev_file = 'data/temp/dev.label'
     log_dir = os.path.split(train_file)[0]
     #train_file = 'data/resume/train.label'
     #dev_file = 'data/resume/dev.label'
