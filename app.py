@@ -12,8 +12,8 @@ from tensorflow import app
 import ipdb
 
 def train():
-    train_file = 'data/insure3/train.1'
-    dev_file = 'data/insure3/test.1'
+    train_file = 'data/insure/train.label'
+    dev_file = 'data/insure/test.label'
     log_dir = os.path.split(train_file)[0]
     #train_file = 'data/resume/train.label'
     #dev_file = 'data/resume/dev.label'
@@ -22,10 +22,9 @@ def train():
     data_processor.getOriginVocab()
     data_processor.load_dev_file(dev_file)
     #data_processor.add_W('./data/GoogleNews-vectors-negative300.bin', name='resume')
-    #data_processor.add_W('./data/GoogleNews-vectors-negative300.bin', name='resume')
     data_processor.add_W() # this will init W_list and W_words_map
-    ipdb.set_trace()
-    data_processor.saveWordsMap(output_file=os.path.join(log_dir, 'embedding.cpkl'))
+    data_processor.dump(os.path.join(log_dir, 'data_processor.cpkl'))
+    print "dump data processor to file {}".format(os.path.join(log_dir, 'data_processor.cpkl'))
     data_processor.train_text2x()
     data_processor.dev_text2x()
     graph = tf.get_default_graph()
@@ -40,7 +39,7 @@ def train():
             channel_static = [False],
             l2_reg_lambda = 0,
         )
-        cnn.set_logdir(os.path.join(log_dir,'insure4'))
+        cnn.set_logdir(os.path.join(log_dir,'runs'))
         cnn.Trainer(data_processor)
         #cnn.batch_cv_train(data_processor, num_epchos=5)
         #resume trainning

@@ -65,14 +65,35 @@ class DataProcessor(object):
         self.dev_text = None
         self.train_x = None
         self.train_y = None
-        self.labels_name = None
+        self.labels_name = None                         #
         self.dev_x = None
         self.dev_y = None
-        self.W_list = [] 
-        self.W_words_maps = []
-        self.embedding_size = embedding_size
-        self.vocab = None
-        self.maxSentenceLength = maxSentenceLength
+        self.W_list = []                                #
+        self.W_words_maps = []                          #
+        self.embedding_size = embedding_size            #
+        self.vocab = None                               #
+        self.maxSentenceLength = maxSentenceLength      #
+    def dump(self, dumpFilePath):
+        dumpData = [
+            self.W_list,
+            self.W_words_maps, 
+            self.labels_name,
+            self.embedding_size, 
+            self.vocab, 
+            self.maxSentenceLength
+        ]
+        cPickle.dump(dumpData, open(dumpFilePath, 'wb'))
+
+    def restore(self, dumpFilePath):
+        if not os.path.isfile(dumpFilePath):
+            print "dumpFile to restore data processor not exist"
+        dumpData = cPickle.load(open(dumpFilePath, 'rb'))
+        self.W_list = dumpData[0]
+        self.W_words_maps = dumpData[1]
+        self.labels_name = dumpData[2]
+        self.embedding_size = dumpData[3]
+        self.vocab = dumpData[4]
+        self.maxSentenceLength = dumpData[5]
     # load text and labels from train file:
     def load_train_file(self, filepath):
         self.train_text, labels = self.load_data_and_labels(filepath)

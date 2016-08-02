@@ -136,7 +136,7 @@ class TextCNN(object):
                     timestamp = str(int(time.time()))
                     out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs", timestamp))
                 else:
-                    out_dir = os.path.abspath(os.path.join(os.path.curdir, "runs",self.logdir))
+                    out_dir = os.path.abspath(os.path.join(os.path.curdir, self.logdir))
                 print("Writing to {}\n".format(out_dir))
 
                 # Summaries for loss and accuracy
